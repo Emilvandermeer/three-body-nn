@@ -31,13 +31,13 @@ if __name__ == "__main__":
     E = -0.8987
 
     rng = np.random.default_rng(0)
-    state = random_initial_conditions(rng, M, G, E)
+    random_state = random_initial_conditions(rng, M, G, E)
     # Test 1: does every random start have the right energy?
     for i in range(3):
-        state = random_initial_conditions(rng, M, G, E)
-        energy = verlet.total_energy(*verlet.unpack_state(state), M, G)
+        random_state = random_initial_conditions(rng, M, G, E)
+        energy = verlet.total_energy(*verlet.unpack_state(random_state), M, G)
         print(f"start {i}: energy = {energy:.6f}")
 
     # Test 2: simulate the last one and look at it
-    states = verlet.simulate(state, M, G, dt=0.001, n_steps=20000, save_every=10)
+    states = verlet.simulate(random_state, M, G, dt=0.001, n_steps=20000, save_every=10)
     verlet.plot_trajectory(states)
