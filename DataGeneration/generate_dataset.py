@@ -40,9 +40,9 @@ def generate_chunk(rng, chunksize, M, G, E, dt, n_steps, save_every):
 
 if __name__ == "__main__":
     #======= Data Generation Settings =======
-    n_chunks = 4
-    chunksize = 10
-    t_max = 50.0
+    n_chunks = 40
+    chunksize = 50
+    t_max = 20.0
     output_dir = "data/traj_chunks"
     seed = 0
     #========================================
