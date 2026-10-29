@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import torch
 
+#global constants so we dont have to hardcode them in multiple different places
 STATE_DIM = 12
 N_POS = 6
 

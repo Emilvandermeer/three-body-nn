@@ -1,7 +1,7 @@
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
-import DataGeneration.VerletSolver as verlet
+import VerletSolver as verlet
 
 out_dir = "data/traj_chunks"  # same folder as in generate_dataset.py
 
@@ -33,4 +33,6 @@ print("unique starts:", len(np.unique(starts, axis=0)), "of", len(starts))
 
 # 7. Look at a few
 for i in range(3):
+    print(f"number of trajectories: {len(data)}")
+    print(f"number of steps in trajectory {i}:", len(data[i]))
     verlet.plot_trajectory(data[i])
