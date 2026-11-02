@@ -178,6 +178,10 @@ def run(cfg: SingleShotConfig) -> dict:
     if cfg.output not in OUTPUT_MODES:
         raise ValueError(f"unknown output mode {cfg.output!r}")
     device = get_device(cfg.device)
+    # flush denormal floats (|x| < ~1e-38) to zero: on CPUs arithmetic with them is extremely slow,
+    # and some of our runs slowed down >10x for minutes once the learning rate had decayed to ~0.
+    # Numerically irrelevant at float32 precision.
+    torch.set_flush_denormal(True)
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
     os.makedirs(cfg.out_dir, exist_ok=True)
