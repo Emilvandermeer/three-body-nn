@@ -35,6 +35,7 @@ class TrainConfig:
     batch_size: int
     steps: int             # total optimiser steps
     lr: float              # peak learning rate
+    lr_schedule: str 
     weight_decay: float
     grad_clip: float       # max gradient norm
     loss: str              
@@ -63,6 +64,7 @@ CONFIG = TrainConfig(
     batch_size=2048,
     steps=100000,
     lr=1e-3,
+    lr_schedule="cosine",
     weight_decay=1e-4,
     grad_clip=1.0,
     loss="mse",             
@@ -85,6 +87,11 @@ def get_device(name: str) -> torch.device:
     if name == "auto":
         name = "cuda" if torch.cuda.is_available() else "cpu"
     return torch.device(name)
+
+
+def lr_at(step: int, cfg: TrainConfig) -> float:
+    'Cosine decay of the learning rate from cfg.lr to 0 over cfg.steps.'
+    return cfg.lr * 0.5 * (1 + math.cos(math.pi * step / cfg.steps))
 
 
 @torch.no_grad()
@@ -186,6 +193,8 @@ def run(cfg: TrainConfig) -> dict:
         #training loop
         net.train()
         for step in range(1, cfg.steps + 1):
+            for g in opt.param_groups:
+                g["lr"] = lr_at(step - 1, cfg)
             s0, s1 = sampler.sample(cfg.batch_size)
             s0, s1 = augment(s0, s1, sampler.gen)  
             x = norm.encode_state(s0).float()
@@ -207,7 +216,7 @@ def run(cfg: TrainConfig) -> dict:
 
                 #this block just for logging stuff
                 secs = time.time() - t_start
-                writer.writerow([step, f"{cfg.lr:.3e}", f"{tr:.6e}", f"{val_mse:.6e}",
+                writer.writerow([step, f"{lr_at(step - 1, cfg):.3e}", f"{tr:.6e}", f"{val_mse:.6e}",
                                  f"{rp:.6e}", f"{rv:.6e}", f"{secs:.1f}"])
                 fh.flush()
                 print(f"step {step:>7d} | train {tr:.3e} | val {val_mse:.3e} | "
