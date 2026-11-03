@@ -26,6 +26,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import subprocess
 import sys
 from dataclasses import replace
 
@@ -80,21 +81,30 @@ EXPERIMENTS = {
 
 # architecture of the ablations: the default network (= CONFIG, same size as the single-step net)
 ABLATION_ARCH = dict(hidden=256, depth=4)
-# architecture of the horizon sweep: the winner of the "arch" search (see its summary.csv)
-HORIZON_ARCH = dict(hidden=256, depth=4)
+# architecture of the horizon sweep: the winner of the "arch" search (see its summary.csv;
+# 512 x 4 had clearly the lowest validation loss, wider was not tried because of CPU time)
+HORIZON_ARCH = dict(hidden=512, depth=4)
 
 
 def run_dir(experiment: str, name: str, seed: int) -> str:
     return os.path.join(SWEEP_DIR, experiment, name, f"seed{seed}")
 
 
-def run_experiment(experiment: str, seeds=SEEDS, steps: int = SEARCH_STEPS):
+def make_config(experiment: str, name: str, seed: int, steps: int = SEARCH_STEPS):
+    """The training configuration of one run of an experiment."""
     base = replace(CONFIG, steps=steps)
     if experiment == "ablation":
         base = replace(base, **ABLATION_ARCH)
     elif experiment == "horizon":
         base = replace(base, **HORIZON_ARCH)
-    for name, overrides in EXPERIMENTS[experiment].items():
+    return replace(base, **EXPERIMENTS[experiment][name], seed=seed, out_dir=run_dir(experiment, name, seed))
+
+
+def run_experiment(experiment: str, seeds=SEEDS, steps: int = SEARCH_STEPS):
+    """Train all runs of an experiment that are not done yet. Every run is started as a separate
+    Python process (the "_run" command below): one long-lived process that trains run after run
+    kept growing in memory until it was killed, a fresh process gives all memory back after each run."""
+    for name in EXPERIMENTS[experiment]:
         for seed in seeds:
             out = run_dir(experiment, name, seed)
             lock = os.path.join(out, "running.lock")
@@ -103,9 +113,10 @@ def run_experiment(experiment: str, seeds=SEEDS, steps: int = SEARCH_STEPS):
                 continue
             os.makedirs(out, exist_ok=True)
             open(lock, "w").close()
-            print(f"\n######## {experiment} / {name} / seed {seed}")
-            train_single_shot.run(replace(base, **overrides, seed=seed, out_dir=out))
-            os.remove(lock)
+            print(f"\n######## {experiment} / {name} / seed {seed}", flush=True)
+            subprocess.run([sys.executable, os.path.abspath(__file__), "_run", experiment, name, str(seed),
+                            str(steps), str(torch.get_num_threads())], check=True)
+            os.remove(lock)  # (stays behind if the run crashed, see the module docstring)
 
 
 def _interp(tau_grid, tau, values):
@@ -146,6 +157,7 @@ def summarise(experiment: str) -> list:
             row[key], row[key + "_std"] = m_, s_
         b = ms[0]["baselines"]
         row["cv_val_mse_norm"] = b["constant velocity"]["val_mse_norm"]
+        row["cv_val_rmse_pos"] = b["constant velocity"]["rmse_pos"]
         row["nochange_val_mse_norm"] = b["no change"]["val_mse_norm"]
         rows.append(row)
 
@@ -165,16 +177,21 @@ def summarise(experiment: str) -> list:
         w.writerows(rows)
     json.dump(rows, open(os.path.join(d, "summary.json"), "w"), indent=2)
 
-    # print a compact table
-    print(f"\n{experiment}: best validation loss (normalised MSE), mean +- std over seeds")
-    print("-" * 78)
+    # print a compact table.
+    # NOTE: the normalised loss is only comparable between runs with the same normaliser, i.e. the
+    # same T_max and start mode (the scales are fitted on the training triples of that setting).
+    # The raw position RMSE is comparable between all runs with the same T_max, so that is what
+    # the figure shows.
+    print(f"\n{experiment}: best validation loss (normalised MSE) and raw position RMSE, mean +- std over seeds")
+    print("-" * 100)
     for r in rows:
         print(f"  {r['run']:22s} params {r['n_params']:>8,d} | val MSE {r['best_val_mse_norm']:.4e} +- "
-              f"{r['best_val_mse_norm_std']:.1e} | pos RMSE {r['best_val_rmse_pos']:.3e} | "
-              f"(const. vel. {r['cv_val_mse_norm']:.3e})")
+              f"{r['best_val_mse_norm_std']:.1e} | pos RMSE {r['best_val_rmse_pos']:.4e} +- "
+              f"{r['best_val_rmse_pos_std']:.1e} | vel RMSE {r['best_val_rmse_vel']:.4e} | "
+              f"(const. vel. pos RMSE {r['cv_val_rmse_pos']:.3e})")
 
-    plots_single_shot.plot_sweep_bars(rows, os.path.join(d, "val_loss.png"),
-                                      title=f"{experiment}: best validation loss (mean ± std over seeds)")
+    plots_single_shot.plot_sweep_bars(rows, os.path.join(d, "val_rmse_pos.png"),
+                                      title=f"{experiment}: validation position RMSE (mean ± std over seeds)")
     plots_single_shot.plot_sweep_curves(curves, os.path.join(d, "val_error_vs_tau.png"),
                                         log_x=(experiment == "horizon"))
     return rows
@@ -209,6 +226,11 @@ def evaluate_horizon(seed: int = 0, single_step_checkpoint: str = "outputs/singl
 
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "summary"
+    if what == "_run":  # internal: train ONE run (called by run_experiment in a fresh process)
+        _, _, exp, name, seed, steps, threads = sys.argv
+        torch.set_num_threads(int(threads))
+        train_single_shot.run(make_config(exp, name, int(seed), int(steps)))
+        raise SystemExit(0)
     if len(sys.argv) > 2:  # optional: number of CPU threads, handy to run two sweeps side by side
         torch.set_num_threads(int(sys.argv[2]))
     if what in EXPERIMENTS:

@@ -115,18 +115,19 @@ def plot_cost_vs_tau(tau, costs: dict, filename):
 
 
 def plot_sweep_bars(rows: list, filename, title=""):
-    """Best validation loss of every run (mean +- std over seeds) with the constant velocity
-    baseline of the same lead-time range as a grey tick."""
+    """Validation position RMSE (raw units) of the best checkpoint of every run, mean +- std over
+    seeds, with the constant velocity baseline of the same lead-time range as a grey tick.
+    (Raw units, because the normalised loss depends on the normaliser of each setting.)"""
     fig, ax = plt.subplots(figsize=(max(6, 1.3 * len(rows)), 4.5))
     x = np.arange(len(rows))
-    m = [r["best_val_mse_norm"] for r in rows]
-    s = [0 if np.isnan(r["best_val_mse_norm_std"]) else r["best_val_mse_norm_std"] for r in rows]
+    m = [r["best_val_rmse_pos"] for r in rows]
+    s = [0 if np.isnan(r["best_val_rmse_pos_std"]) else r["best_val_rmse_pos_std"] for r in rows]
     ax.bar(x, m, yerr=s, capsize=4, color="tab:blue", alpha=0.8, label="network")
-    ax.scatter(x, [r["cv_val_mse_norm"] for r in rows], marker="_", s=600, color="grey", label="constant velocity")
+    ax.scatter(x, [r["cv_val_rmse_pos"] for r in rows], marker="_", s=600, color="grey", label="constant velocity")
     ax.set_xticks(x)
     ax.set_xticklabels([r["run"] for r in rows], rotation=20, ha="right", fontsize=8)
     ax.set_yscale("log")
-    ax.set_ylabel("validation loss (MSE, normalised)")
+    ax.set_ylabel("validation position RMSE")
     ax.set_title(title, fontsize=9)
     ax.grid(True, alpha=0.3, axis="y")
     ax.legend(fontsize=8)
